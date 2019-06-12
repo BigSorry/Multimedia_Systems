@@ -11,12 +11,17 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import numpy as np
 
-path = "images/*.jpg"
+path = "images/database/*.jpg"
 imageList = []
 for filename in glob.glob(path):
     imageList.append(Image.open(filename))
 
-imgSize = 128
+path = "images/search/*.jpg"
+searchImage = []
+for filename in glob.glob(path):
+    searchImage = Image.open(filename)
+    
+imgSize = 512
 transform = transforms.Compose([
     transforms.Resize((imgSize,imgSize)),
     transforms.ToTensor(),
@@ -60,19 +65,22 @@ def makeLayers(cnn, last = 5):
 def plot(matches):
     plt.rcParams['axes.linewidth'] = 3
     plt.figure()
-    plt.imshow(imageList[0])
-    plt.title("Search image")
+    rows = int(np.ceil(len(matches) / 2)) + 1
+    ax = plt.subplot(2,rows, 1)
+    ax.spines['bottom'].set_color("black")
+    ax.spines['top'].set_color("black")
+    ax.spines['right'].set_color("black")
+    ax.spines['left'].set_color("black")
+    plt.imshow(searchImage)
     plt.xticks([])
     plt.yticks([])
 
-    plt.figure()
-    plt.title("Matches")
-    rows = int(np.ceil(len(matches) / 2))
     for key, value in matches.items():
-        ax = plt.subplot(2, rows, key)
+        ax = plt.subplot(2, rows, key+1)
         color = 'red'
         if value == True:
             color = "green"
+            print(color)
         ax.spines['bottom'].set_color(color)
         ax.spines['top'].set_color(color)
         ax.spines['right'].set_color(color)
@@ -80,22 +88,20 @@ def plot(matches):
         plt.imshow(imageList[key])
         plt.xticks([])
         plt.yticks([])
+    plt.savefig('result/matches.png')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pretrained = models.vgg19_bn(pretrained=True).eval()
 cnn = copy.deepcopy(pretrained)
-model = makeLayers(cnn)
 
-searchImg = imToTrain(imageList[0])
-searchEncoding = model(searchImg).flatten().detach().numpy()
-searchEncoding2 = model(searchImg).detach()
+layers = ['conv_5']
+model = makeLayers(cnn)
+searchEncoding = model(imToTrain(searchImage)).detach()
 matches = {i:False for i in range(1, len(imageList))}
 threshold = 0.01
 for i in range(1, len(imageList)):
-    # compareEncoding = model(imToTrain(imageList[i])).flatten().detach().numpy()
-    # mse = sum(abs(compareEncoding - searchEncoding)**2)
-    compareEncoding2 = model(imToTrain(imageList[i])).detach()
-    normalizedMse = F.mse_loss(searchEncoding2, compareEncoding2)
+    compareEncoding = model(imToTrain(imageList[i])).detach()
+    normalizedMse = F.mse_loss(searchEncoding, compareEncoding)
 
     value = normalizedMse.numpy()
     print("Mse is {}".format(value))
@@ -106,4 +112,3 @@ for i in range(1, len(imageList)):
 
 print("Done matching, now plotting")
 plot(matches)
-plt.show()
