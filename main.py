@@ -21,7 +21,7 @@ searchImage = []
 for filename in glob.glob(path):
     searchImage = Image.open(filename)
     
-imgSize = 512
+imgSize = 56
 transform = transforms.Compose([
     transforms.Resize((imgSize,imgSize)),
     transforms.ToTensor(),
@@ -33,16 +33,16 @@ def imToTrain(im):
     im = Variable(im)
     return im
 
-def makeLayers(cnn, last = 5):
+def getMatches(cnn, search, targets, layers):
     model = nn.Sequential()
     i = 0
     name = ""
     sequences = list(cnn.children())[0]
+    mseValues = [0 for i in range(0, len(targets))]
+    threshold = 0.01
     for layer in sequences:
         if isinstance(layer, nn.Conv2d):
             i += 1
-            if i > last:
-                break
             name = 'conv_{}'.format(i)
         elif isinstance(layer, nn.ReLU):
             name = 'relu_{}'.format(i)
@@ -59,8 +59,23 @@ def makeLayers(cnn, last = 5):
             name = 'linear_{}'.format(i)
         else:
             continue
+
         model.add_module(name, layer)
-    return model
+        if name in layers:
+            searchEncoding = model(search).detach()
+            for i in range(0, len(imageList)):
+                compareEncoding = model(targets[i]).detach()
+                normalizedMse = F.mse_loss(searchEncoding, compareEncoding)
+
+                mseValues[i] += normalizedMse.numpy()
+                print("Mse is {}".format(mseValues[i]))
+
+    result = {i: False for i in range(0, len(targets))}
+    for i in range(0, len(mseValues)):
+        if mseValues[i]/len(layers) < threshold:
+            result[i] = True
+
+    return result
 
 def plot(matches):
     plt.rcParams['axes.linewidth'] = 3
@@ -80,7 +95,6 @@ def plot(matches):
         color = 'red'
         if value == True:
             color = "green"
-            print(color)
         ax.spines['bottom'].set_color(color)
         ax.spines['top'].set_color(color)
         ax.spines['right'].set_color(color)
@@ -94,21 +108,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pretrained = models.vgg19_bn(pretrained=True).eval()
 cnn = copy.deepcopy(pretrained)
 
-layers = ['conv_5']
-model = makeLayers(cnn)
-searchEncoding = model(imToTrain(searchImage)).detach()
-matches = {i:False for i in range(1, len(imageList))}
-threshold = 0.01
-for i in range(1, len(imageList)):
-    compareEncoding = model(imToTrain(imageList[i])).detach()
-    normalizedMse = F.mse_loss(searchEncoding, compareEncoding)
-
-    value = normalizedMse.numpy()
-    print("Mse is {}".format(value))
-    if value < threshold:
-        matches[i] = True
-    if i % 10 == 0:
-        print("At image {}".format(i))
-
+layers = ['conv_4', 'conv_5']
+targets = [imToTrain(image) for image in imageList]
+matches = getMatches(cnn, imToTrain(searchImage), targets, layers)
 print("Done matching, now plotting")
 plot(matches)
