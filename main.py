@@ -9,15 +9,14 @@ from PIL import Image
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
+import numpy as np
 
-path = "D:\Semester2\mulitmedia_final\sival_apple_banana/"
+path = "images/*.jpg"
 imageList = []
-for filename in glob.glob(path+"apple/*.jpg"):
+for filename in glob.glob(path):
     imageList.append(Image.open(filename))
 
-for filename in glob.glob(path+"banana/*.jpg"):
-    imageList.append(Image.open(filename))
-imgSize = 256
+imgSize = 128
 transform = transforms.Compose([
     transforms.Resize((imgSize,imgSize)),
     transforms.ToTensor(),
@@ -58,6 +57,30 @@ def makeLayers(cnn, last = 5):
         model.add_module(name, layer)
     return model
 
+def plot(matches):
+    plt.rcParams['axes.linewidth'] = 3
+    plt.figure()
+    plt.imshow(imageList[0])
+    plt.title("Search image")
+    plt.xticks([])
+    plt.yticks([])
+
+    plt.figure()
+    plt.title("Matches")
+    rows = int(np.ceil(len(matches) / 2))
+    for key, value in matches.items():
+        ax = plt.subplot(2, rows, key)
+        color = 'red'
+        if value == True:
+            color = "green"
+        ax.spines['bottom'].set_color(color)
+        ax.spines['top'].set_color(color)
+        ax.spines['right'].set_color(color)
+        ax.spines['left'].set_color(color)
+        plt.imshow(imageList[key])
+        plt.xticks([])
+        plt.yticks([])
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pretrained = models.vgg19_bn(pretrained=True).eval()
 cnn = copy.deepcopy(pretrained)
@@ -66,27 +89,21 @@ model = makeLayers(cnn)
 searchImg = imToTrain(imageList[0])
 searchEncoding = model(searchImg).flatten().detach().numpy()
 searchEncoding2 = model(searchImg).detach()
-results = []
-for i in range(0, len(imageList)):
+matches = {i:False for i in range(1, len(imageList))}
+threshold = 0.01
+for i in range(1, len(imageList)):
     # compareEncoding = model(imToTrain(imageList[i])).flatten().detach().numpy()
     # mse = sum(abs(compareEncoding - searchEncoding)**2)
-
     compareEncoding2 = model(imToTrain(imageList[i])).detach()
     normalizedMse = F.mse_loss(searchEncoding2, compareEncoding2)
 
-    results.append(normalizedMse.numpy())
+    value = normalizedMse.numpy()
+    print("Mse is {}".format(value))
+    if value < threshold:
+        matches[i] = True
     if i % 10 == 0:
-        print(i)
+        print("At image {}".format(i))
 
-sumApple = 0
-sumBanana = 0
-for i, x in enumerate(results):
-    print(x)
-    if i < 60:
-        sumApple+=x
-    else:
-        sumBanana+=x
-
-print("Apple {}".format(sumApple))
-print("Banana {}".format(sumBanana))
-print("Done")
+print("Done matching, now plotting")
+plot(matches)
+plt.show()
